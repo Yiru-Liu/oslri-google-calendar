@@ -5,7 +5,7 @@ import time
 import re
 import datetime
 
-LOGIN_URL = "https://catalog.oslri.net/iii/cas/login?service=https%3A%2F%2Fcatalog.oslri.net%3A443%2Fpatroninfo~S1%2FIIITICKET&scope=1"
+LOGIN_URL = "https://catalog.oslri.net/patroninfo"
 
 
 # Returns a list of dictionaries.
@@ -14,9 +14,6 @@ LOGIN_URL = "https://catalog.oslri.net/iii/cas/login?service=https%3A%2F%2Fcatal
 # "Title": A string that contains the short title.
 # "Due Date": A datetime object of the due date.
 def get_checkedout_info():
-    # TODO: Navigate to the login page from the main page to avoid needing to
-    #       save an unnecessarily long URL
-
     # Initialize the driver and run it in headless mode so the browser window doesn't show
     options = webdriver.FirefoxOptions()
     options.headless = True
