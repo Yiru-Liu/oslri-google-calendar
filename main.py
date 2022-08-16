@@ -14,9 +14,16 @@ LOGIN_URL = "https://catalog.oslri.net/iii/cas/login?service=https%3A%2F%2Fcatal
 # "Title": A string that contains the short title.
 # "Due Date": A datetime object of the due date.
 def get_checkedout_info():
+    # TODO: Navigate to the login page from the main page to avoid needing to
+    #       save an unnecessarily long URL
+
+    # Initialize the driver and run it in headless mode so the browser window doesn't show
+    options = webdriver.FirefoxOptions()
+    options.headless = True
+    driver = webdriver.Firefox(options=options)
+    driver.implicitly_wait(10)  # Allow time for the pages to load
+
     # Go to the login page:
-    driver = webdriver.Firefox()
-    driver.implicitly_wait(10)
     driver.get(LOGIN_URL)
     assert driver.title == "Ocean State Libraries Log in"
 
