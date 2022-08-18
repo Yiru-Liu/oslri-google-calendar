@@ -9,8 +9,7 @@ LOGIN_URL = "https://catalog.oslri.net/patroninfo"
 
 
 # Returns a list of dictionaries.
-# Each dictionary contains info of one item checked out, and has
-# the following keys:
+# Each dictionary contains info of one item checked out, and has the following keys:
 # "Title": A string that contains the short title.
 # "Due Date": A datetime object of the due date.
 def get_checkedout_info():
