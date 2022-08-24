@@ -8,3 +8,5 @@ This project is created with:
 
 ## Installation
 Install [Python](https://www.python.org/).
+Install dependencies:
+pip install --upgrade google-api-python-client google-auth-httplib2 google-auth-oauthlib selenium
