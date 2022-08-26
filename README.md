@@ -10,3 +10,4 @@ This project is created with:
 Install [Python](https://www.python.org/).
 Install dependencies:
 pip install --upgrade google-api-python-client google-auth-httplib2 google-auth-oauthlib selenium
+Download the [Firefox geckodriver](https://github.com/mozilla/geckodriver/releases), and add the executable to PATH.

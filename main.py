@@ -4,15 +4,21 @@ from selenium.webdriver.common.by import By
 import time
 import re
 import datetime
+from cal_setup import get_cal_service
 
 LOGIN_URL = "https://catalog.oslri.net/patroninfo"
+CALENDAR_NAME = "OSLRI Due Dates"
 
 
-# Returns a list of dictionaries.
-# Each dictionary contains info of one item checked out, and has the following keys:
-# "Title": A string that contains the short title.
-# "Due Date": A datetime object of the due date.
+
 def get_checkedout_info():
+    """
+    Returns a list of dictionaries.
+    Each dictionary contains info of one item checked out, and has the following keys:
+    "Title": A string that contains the short title.
+    "Due Date": A datetime object of the due date.
+    "Renewed": A string that describes how many times the item has been renewed.
+    """
     # Initialize the driver and run it in headless mode so the browser window doesn't show
     options = webdriver.FirefoxOptions()
     options.headless = True
@@ -44,21 +50,65 @@ def get_checkedout_info():
     for item in item_table:
         full_title = item.find_element(By.CLASS_NAME, "patFuncTitleMain").text
         title = re.split(r" / | : ", full_title)[0]     # Title up until the first " / " or " : "
+
         status = item.find_element(By.CLASS_NAME, "patFuncStatus").text     # Entire text under "Status" column
+
         due_date_text = re.search(r'(\d+-\d+-\d+)', status).group(1)        # Use regular expression to find "MM-DD-YY"
         due_date = datetime.datetime.strptime(due_date_text, "%m-%d-%y")    # Convert to datetime object
+
+        renewed_index = status.find("Renewed")
+        if renewed_index == -1:
+            renewed = "Renewed 0 times"
+        else:
+            renewed = status[renewed_index:]
+
         item_info_dict = {
             "Title": title,
-            "Due Date": due_date
+            "Due Date": due_date,
+            "Renewed": renewed
         }
         info.append(item_info_dict)
     driver.close()
     return info
 
 
+def push_to_google_calendar(checkedout_info):
+    service = get_cal_service()
+
+    calendars = service.calendarList().list().execute().get("items", [])
+    calendar_summaries = [calendar["summary"] for calendar in calendars]
+    calendar_ids = [calendar["id"] for calendar in calendars]
+    try:    # Necessary if the OSLRI calendar has not yet been created
+        oslri_calendar_i = calendar_summaries.index(CALENDAR_NAME)
+        oslri_calendar_id = calendar_ids[oslri_calendar_i]
+    except ValueError:
+        oslri_calendar = {"summary": CALENDAR_NAME}
+        oslri_calendar_id = service.calendars().insert(body=oslri_calendar).execute()
+
+    print(oslri_calendar_id)
+
+    for item in checkedout_info:
+        event = {
+            "summary": "Due: " + item["Title"],
+            "start": {
+                "date": item["Due Date"].strftime(r"%Y-%m-%d")
+            },
+            "end": {
+                "date": item["Due Date"].strftime(r"%Y-%m-%d")
+            },
+            "description": item["Renewed"]
+        }
+        event = service.events().insert(calendarId=oslri_calendar_id, body=event).execute()
+        print(f"Event created: {event.get('htmlLink')}")
+    
+
+
+
 def main():
     checkedout_info = get_checkedout_info()
     print(checkedout_info)
+    push_to_google_calendar(checkedout_info)
+    print("Pushed to Google Calendar.")
 
 
 if __name__ == "__main__":
