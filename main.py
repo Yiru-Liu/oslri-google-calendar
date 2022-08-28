@@ -1,3 +1,5 @@
+#!/usr/bin/env python3
+
 from selenium import webdriver
 from selenium.webdriver import ActionChains
 from selenium.webdriver.common.by import By
@@ -5,6 +7,7 @@ import time
 import re
 import datetime
 from cal_setup import get_cal_service
+from googleapiclient.errors import HttpError
 
 LOGIN_URL = "https://catalog.oslri.net/patroninfo"
 CALENDAR_NAME = "OSLRI Due Dates"
@@ -23,7 +26,8 @@ def get_checkedout_info():
     options = webdriver.FirefoxOptions()
     options.headless = True
     driver = webdriver.Firefox(options=options)
-    driver.implicitly_wait(10)  # Allow time for the pages to load
+    driver.implicitly_wait(3)  # Allow time for the pages to load
+    print("Webdriver initialized.")
 
     # Go to the login page:
     driver.get(LOGIN_URL)
@@ -39,6 +43,7 @@ def get_checkedout_info():
     username_input.send_keys(username)
     pin_input.send_keys(pin)
     ActionChains(driver).click(submit_button).perform()
+    print("Successfully logged in to OSLRI.")
 
     # Go to Items Checked Out page:
     checked_out_link = driver.find_element(By.ID, "patButChkouts")
@@ -67,23 +72,31 @@ def get_checkedout_info():
             "Due Date": due_date,
             "Renewed": renewed
         }
+        print(f"Item info pulled: {item_info_dict}")
         info.append(item_info_dict)
+    print("Closing Webdriver...", end=" ")
     driver.close()
+    print("Done.")
     return info
 
 
 def push_to_google_calendar(checkedout_info):
+    assert isinstance(checkedout_info, list)
+    assert all(isinstance(item, dict) for item in checkedout_info)
+    print("Getting calendar service...", end=" ")
     service = get_cal_service()
+    print("Done.")
 
+    # Get currently existing calendars, and their names and ids:
     calendars = service.calendarList().list().execute().get("items", [])
     calendar_summaries = [calendar["summary"] for calendar in calendars]
     calendar_ids = [calendar["id"] for calendar in calendars]
-    try:    # Necessary if the OSLRI calendar has not yet been created
+    try:    # Tries to get the calendar ID of the OSLRI calendar, if it exists:
         oslri_calendar_i = calendar_summaries.index(CALENDAR_NAME)
         oslri_calendar_id = calendar_ids[oslri_calendar_i]
-    except ValueError:
+    except ValueError:  # If the OSLRI calendar does not yet exist, create it:
         oslri_calendar = {"summary": CALENDAR_NAME}
-        oslri_calendar_id = service.calendars().insert(body=oslri_calendar).execute()
+        oslri_calendar_id = service.calendars().insert(body=oslri_calendar).execute()["id"]
 
     print(oslri_calendar_id)
 
@@ -102,11 +115,8 @@ def push_to_google_calendar(checkedout_info):
         print(f"Event created: {event.get('htmlLink')}")
     
 
-
-
 def main():
     checkedout_info = get_checkedout_info()
-    print(checkedout_info)
     push_to_google_calendar(checkedout_info)
     print("Pushed to Google Calendar.")
 
