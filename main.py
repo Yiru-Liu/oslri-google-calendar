@@ -3,7 +3,7 @@
 
 The first time this is run, a browser window may pop up asking the user to
 authorize access to their Google account. Permission should be granted to
-access Google Calendar.
+access Google Calendar in order to update events.
 Should be run periodically to ensure Google Calendar is up to date
 (recommendation: every 24 hours).
 """
@@ -20,14 +20,15 @@ __copyright__ = "Copyright 2022, Yiru Liu"
 __license__ = "MIT"
 __maintainer__ = "Yiru Liu"
 __email__ = "yiru.liu05@gmail.com"
-__status__ = "Development"
+__status__ = "Production"
 
 LOGIN_URL = "https://catalog.oslri.net/patroninfo"
 CALENDAR_NAME = "OSLRI Due Dates"
 
 def get_checkedout_info(username, pin):
     """
-    Returns a list of dictionaries.
+    Returns a list of dictionaries, each dictionary containing information
+    about one item.
 
             Parameters:
                     username (str): Library Card Number or Username
@@ -35,12 +36,15 @@ def get_checkedout_info(username, pin):
 
             Returns:
                     info (list of dictionaries):
-                        Each dictionary in the list contains info of one item checked out, and has the following keys:
+                        Each dictionary in the list contains info of one item
+                        checked out, and has the following keys:
                             "Title" (str): The short title
                             "Due Date" (datetime): The due date
-                            "Renewed" (str): A string that describes how many times the item has been renewed
+                            "Renewed" (str): A string that describes how many
+                                             times the item has been renewed
     """
-    # Initialize the driver and run it in headless mode so the browser window doesn't show
+    # Initialize the driver and run it in headless mode
+    # so the browser window doesn't show
     options = webdriver.FirefoxOptions()
     options.headless = True
     driver = webdriver.Firefox(options=options)
@@ -69,12 +73,17 @@ def get_checkedout_info(username, pin):
     info = []
     for item in item_table:
         full_title = item.find_element(By.CLASS_NAME, "patFuncTitleMain").text
-        title = re.split(r" / | : ", full_title)[0]     # Title up until the first " / " or " : "
 
-        status = item.find_element(By.CLASS_NAME, "patFuncStatus").text     # Entire text under "Status" column
+        # Title up until the first " / " or " : "
+        title = re.split(r" / | : ", full_title)[0]
 
-        due_date_text = re.search(r'(\d+-\d+-\d+)', status).group(1)        # Use regular expression to find "MM-DD-YY"
-        due_date = datetime.datetime.strptime(due_date_text, "%m-%d-%y")    # Convert to datetime object
+        # Entire text under "Status" column
+        status = item.find_element(By.CLASS_NAME, "patFuncStatus").text
+
+        # Use regular expression to find "MM-DD-YY"
+        due_date_text = re.search(r'(\d+-\d+-\d+)', status).group(1)
+        # Convert to datetime object
+        due_date = datetime.datetime.strptime(due_date_text, "%m-%d-%y")
 
         renewed_index = status.find("Renewed")
         if renewed_index == -1:
@@ -89,16 +98,55 @@ def get_checkedout_info(username, pin):
         }
         print(f"Item info pulled: {item_info_dict}")
         info.append(item_info_dict)
-    print("Closing Webdriver...", end=" ")
+    print("Closing Webdriver...", end=" ", flush=True)
     driver.close()
     print("Done.")
     return info
 
 
-def push_to_google_calendar(checkedout_info):
+def checkedout_info_to_cal_events(checkedout_info):
+    """
+    Takes checkedout_info returned by get_checkedout_info and returns a list
+    of calendar events.
+
+            Parameters:
+                    info (list of dictionaries):
+                        Each dictionary in the list contains info of one item
+                        checked out, and has the following keys:
+                            "Title" (str): The short title
+                            "Due Date" (datetime): The due date
+                            "Renewed" (str): A string that describes how many
+                                             times the item has been renewed
+
+            Returns:
+                    updated_events (list of calendar events):
+                        List of calendar events, which can be passed to
+                        push_to_google_calendar.
+    """
     assert isinstance(checkedout_info, list)
     assert all(isinstance(item, dict) for item in checkedout_info)
-    print("Getting calendar service...", end=" ")
+
+    updated_events = []
+    for item in checkedout_info:
+        event = {
+            "summary": "Due: " + item["Title"],
+            "start": {
+                "date": item["Due Date"].strftime(r"%Y-%m-%d")
+            },
+            "end": {
+                "date": item["Due Date"].strftime(r"%Y-%m-%d")
+            },
+            "description": item["Renewed"]
+        }
+        updated_events.append(event)
+    return updated_events
+
+
+def push_to_google_calendar(updated_events):
+    assert isinstance(updated_events, list)
+    assert all(isinstance(item, dict) for item in updated_events)
+
+    print("Getting calendar service...", end=" ", flush=True)
     service = get_cal_service()
     print("Done.")
 
@@ -115,20 +163,29 @@ def push_to_google_calendar(checkedout_info):
 
     print(oslri_calendar_id)
 
-    for item in checkedout_info:
-        event = {
-            "summary": "Due: " + item["Title"],
-            "start": {
-                "date": item["Due Date"].strftime(r"%Y-%m-%d")
-            },
-            "end": {
-                "date": item["Due Date"].strftime(r"%Y-%m-%d")
-            },
-            "description": item["Renewed"]
-        }
+    current_events = service.events().list(calendarId=oslri_calendar_id).execute().get("items", [])
+    events_to_be_added = []
+    events_to_be_removed = []
+
+    for updated_event in updated_events:
+        if all(not (updated_event.items() <= current_event.items()) for current_event in current_events):
+            events_to_be_added.append(updated_event)
+
+    for current_event in current_events:
+        if all(not (updated_event.items() <= current_event.items()) for updated_event in updated_events):
+            events_to_be_removed.append(current_event)
+
+    print(f"Events to be added: {events_to_be_added}")
+    print(f"Events to be removed: {events_to_be_removed}")
+
+    for event in events_to_be_removed:
+        service.events().delete(calendarId=oslri_calendar_id, eventId=event["id"]).execute()
+        print(f"Event removed: {event}")
+
+    for event in events_to_be_added:
         event = service.events().insert(calendarId=oslri_calendar_id, body=event).execute()
         print(f"Event created: {event.get('htmlLink')}")
-    
+
 
 def main():
     with open("credentials.txt") as f:
@@ -136,7 +193,8 @@ def main():
         pin = f.readline().strip()
         f.close()
     checkedout_info = get_checkedout_info(username, pin)
-    push_to_google_calendar(checkedout_info)
+    updated_events = checkedout_info_to_cal_events(checkedout_info)
+    push_to_google_calendar(updated_events)
     print("Pushed to Google Calendar.")
 
 
