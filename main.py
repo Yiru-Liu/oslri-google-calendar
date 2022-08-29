@@ -1,26 +1,44 @@
 #!/usr/bin/env python3
+"""Main script of the project.
 
+The first time this is run, a browser window may pop up asking the user to
+authorize access to their Google account. Permission should be granted to
+access Google Calendar.
+Should be run periodically to ensure Google Calendar is up to date
+(recommendation: every 24 hours).
+"""
+
+import re
+import datetime
 from selenium import webdriver
 from selenium.webdriver import ActionChains
 from selenium.webdriver.common.by import By
-import time
-import re
-import datetime
 from cal_setup import get_cal_service
-from googleapiclient.errors import HttpError
+
+__author__ = "Yiru Liu"
+__copyright__ = "Copyright 2022, Yiru Liu"
+__license__ = "MIT"
+__maintainer__ = "Yiru Liu"
+__email__ = "yiru.liu05@gmail.com"
+__status__ = "Development"
 
 LOGIN_URL = "https://catalog.oslri.net/patroninfo"
 CALENDAR_NAME = "OSLRI Due Dates"
 
-
-
-def get_checkedout_info():
+def get_checkedout_info(username, pin):
     """
     Returns a list of dictionaries.
-    Each dictionary contains info of one item checked out, and has the following keys:
-    "Title": A string that contains the short title.
-    "Due Date": A datetime object of the due date.
-    "Renewed": A string that describes how many times the item has been renewed.
+
+            Parameters:
+                    username (str): Library Card Number or Username
+                    pin (str): PIN to log in to the library account
+
+            Returns:
+                    info (list of dictionaries):
+                        Each dictionary in the list contains info of one item checked out, and has the following keys:
+                            "Title" (str): The short title
+                            "Due Date" (datetime): The due date
+                            "Renewed" (str): A string that describes how many times the item has been renewed
     """
     # Initialize the driver and run it in headless mode so the browser window doesn't show
     options = webdriver.FirefoxOptions()
@@ -37,9 +55,6 @@ def get_checkedout_info():
     username_input = driver.find_element(By.ID, "code")
     pin_input = driver.find_element(By.ID, "pin")
     submit_button = driver.find_element(By.CSS_SELECTOR, ".formButtons > a")
-    with open("credentials.txt") as f:
-        username = f.readline().strip()
-        pin = f.readline().strip()
     username_input.send_keys(username)
     pin_input.send_keys(pin)
     ActionChains(driver).click(submit_button).perform()
@@ -116,7 +131,11 @@ def push_to_google_calendar(checkedout_info):
     
 
 def main():
-    checkedout_info = get_checkedout_info()
+    with open("credentials.txt") as f:
+        username = f.readline().strip()
+        pin = f.readline().strip()
+        f.close()
+    checkedout_info = get_checkedout_info(username, pin)
     push_to_google_calendar(checkedout_info)
     print("Pushed to Google Calendar.")
 

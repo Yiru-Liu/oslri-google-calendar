@@ -1,4 +1,4 @@
-"""Provides a function to get the Google Calendar API service"""
+"""Provides the get_cal_service function to get the Google Calendar API service"""
 from __future__ import print_function
 
 import os.path
