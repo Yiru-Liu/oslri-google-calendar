@@ -200,6 +200,11 @@ def main():
 
 if __name__ == "__main__":
     # main()
+    with open("credentials.txt") as f:
+        username = f.readline().strip()
+        pin = f.readline().strip()
+        f.close()
+
     print("Program started.")
     cj = http.cookiejar.CookieJar()
     br = mechanize.Browser()
@@ -208,8 +213,8 @@ if __name__ == "__main__":
     br.open(LOGIN_URL)
     print("Login page loaded.")
     br.select_form(nr=0)
-    br.form["code"] = ""
-    br.form["pin"] = ""
+    br.form["code"] = username
+    br.form["pin"] = pin
     br.submit()
     print("Login successful.")
 
