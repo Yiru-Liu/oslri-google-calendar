@@ -10,9 +10,9 @@ Should be run periodically to ensure Google Calendar is up to date
 
 import re
 import datetime
-from selenium import webdriver
-from selenium.webdriver import ActionChains
-from selenium.webdriver.common.by import By
+import requests
+import mechanize
+import http.cookiejar
 from cal_setup import get_cal_service
 
 __author__ = "Yiru Liu"
@@ -199,4 +199,24 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    # main()
+    print("Program started.")
+    cj = http.cookiejar.CookieJar()
+    br = mechanize.Browser()
+    br.set_handle_robots(False)
+    br.set_cookiejar(cj)
+    br.open(LOGIN_URL)
+    print("Login page loaded.")
+    br.select_form(nr=0)
+    br.form["code"] = ""
+    br.form["pin"] = ""
+    br.submit()
+    print("Login successful.")
+
+    br.follow_link(text_regex=".*currently checked out")
+
+    print(br.response().read())
+    print("Successfully retrieved checked out items.")
+
+    with open("items.html", "wb") as w:
+        w.write(br.response().read())
