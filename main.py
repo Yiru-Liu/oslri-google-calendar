@@ -10,9 +10,10 @@ Should be run periodically to ensure Google Calendar is up to date
 
 import re
 import datetime
-import requests
-import mechanize
+import logging
 import http.cookiejar
+import mechanize
+from bs4 import BeautifulSoup
 from cal_setup import get_cal_service
 
 __author__ = "Yiru Liu"
@@ -43,65 +44,106 @@ def get_checkedout_info(username, pin):
                             "Renewed" (str): A string that describes how many
                                              times the item has been renewed
     """
-    # Initialize the driver and run it in headless mode
-    # so the browser window doesn't show
-    options = webdriver.FirefoxOptions()
-    options.headless = True
-    driver = webdriver.Firefox(options=options)
-    driver.implicitly_wait(3)  # Allow time for the pages to load
-    print("Webdriver initialized.")
+    # Initialize the browser:
+    cj = http.cookiejar.CookieJar()
+    br = mechanize.Browser()
+    br.set_handle_robots(False)
+    br.set_cookiejar(cj)
 
     # Go to the login page:
-    driver.get(LOGIN_URL)
-    assert driver.title == "Ocean State Libraries Log in"
+    br.open(LOGIN_URL)
+    logging.info("Login page loaded.")
 
     # Input credentials and log in:
-    username_input = driver.find_element(By.ID, "code")
-    pin_input = driver.find_element(By.ID, "pin")
-    submit_button = driver.find_element(By.CSS_SELECTOR, ".formButtons > a")
-    username_input.send_keys(username)
-    pin_input.send_keys(pin)
-    ActionChains(driver).click(submit_button).perform()
-    print("Successfully logged in to OSLRI.")
+    br.select_form(nr=0)
+    br.form["code"] = username
+    br.form["pin"] = pin
+    br.submit()
+    logging.info("Login successful.")
 
     # Go to Items Checked Out page:
-    checked_out_link = driver.find_element(By.ID, "patButChkouts")
-    ActionChains(driver).click(checked_out_link).perform()
+    br.follow_link(text_regex=".*currently checked out")
+
+    logging.info("Successfully retrieved checked out items.")
 
     # Pull information from table:
-    item_table = driver.find_elements(By.CSS_SELECTOR, "#checkout_form tr.patFuncEntry")
     info = []
-    for item in item_table:
-        full_title = item.find_element(By.CLASS_NAME, "patFuncTitleMain").text
+    soup = BeautifulSoup(br.response().read(), features="html5lib")
+    table = soup.find("table")
+    table_body = table.find('tbody')
 
-        # Title up until the first " / " or " : "
-        title = re.split(r" / | : ", full_title)[0]
+    full_titles = [item.text.strip() for item in table_body.find_all("th", {"class": "patFuncBibTitle"})]
 
-        # Entire text under "Status" column
-        status = item.find_element(By.CLASS_NAME, "patFuncStatus").text
+    # Title up until the first " / " or " : "
+    titles = [re.split(r" / | : ", full_title)[0] for full_title in full_titles]
 
-        # Use regular expression to find "MM-DD-YY"
-        due_date_text = re.search(r'(\d+-\d+-\d+)', status).group(1)
-        # Convert to datetime object
-        due_date = datetime.datetime.strptime(due_date_text, "%m-%d-%y")
+    # Entire text under "Status" column
+    statuses = [item.text.strip() for item in table_body.find_all("td", {"class": "patFuncStatus"})]
 
+    # Use regular expression to find "MM-DD-YY"
+    due_date_texts = [re.search(r'(\d+-\d+-\d+)', status).group(1) for status in statuses]
+    # Convert to datetime object
+    due_dates = [datetime.datetime.strptime(due_date_text, "%m-%d-%y") for due_date_text in due_date_texts]
+
+    # Renew statuses
+    reneweds = []
+    for status in statuses:
         renewed_index = status.find("Renewed")
         if renewed_index == -1:
-            renewed = "Renewed 0 times"
+            reneweds.append("Renewed 0 times")
         else:
-            renewed = status[renewed_index:]
+            reneweds.append(status[renewed_index:])
 
+
+    # Assert that we have all the info for each item:
+    assert len(titles) == len(statuses)
+    assert len(titles) == len(due_dates)
+    assert len(titles) == len(reneweds)
+
+    for i, title in enumerate(titles):
         item_info_dict = {
             "Title": title,
-            "Due Date": due_date,
-            "Renewed": renewed
+            "Due Date": due_dates[i],
+            "Renewed": reneweds[i]
         }
-        print(f"Item info pulled: {item_info_dict}")
+        logging.info(f"Item info pulled: {item_info_dict}")
         info.append(item_info_dict)
-    print("Closing Webdriver...", end=" ", flush=True)
-    driver.close()
-    print("Done.")
+
     return info
+    # Pull information from table:
+    # item_table = driver.find_elements(By.CSS_SELECTOR, "#checkout_form tr.patFuncEntry")
+    # info = []
+    # for item in item_table:
+    #     full_title = item.find_element(By.CLASS_NAME, "patFuncTitleMain").text
+
+    #     # Title up until the first " / " or " : "
+    #     title = re.split(r" / | : ", full_title)[0]
+
+    #     # Entire text under "Status" column
+    #     status = item.find_element(By.CLASS_NAME, "patFuncStatus").text
+
+    #     # Use regular expression to find "MM-DD-YY"
+    #     due_date_text = re.search(r'(\d+-\d+-\d+)', status).group(1)
+    #     # Convert to datetime object
+    #     due_date = datetime.datetime.strptime(due_date_text, "%m-%d-%y")
+
+    #     renewed_index = status.find("Renewed")
+    #     if renewed_index == -1:
+    #         renewed = "Renewed 0 times"
+    #     else:
+    #         renewed = status[renewed_index:]
+
+    #     item_info_dict = {
+    #         "Title": title,
+    #         "Due Date": due_date,
+    #         "Renewed": renewed
+    #     }
+    #     print(f"Item info pulled: {item_info_dict}")
+    #     info.append(item_info_dict)
+    # print("Closing Webdriver...", end=" ", flush=True)
+    # driver.close()
+    # print("Done.")
+    # return info
 
 
 def checkedout_info_to_cal_events(checkedout_info):
@@ -188,6 +230,8 @@ def push_to_google_calendar(updated_events):
 
 
 def main():
+    logging.getLogger().setLevel(logging.INFO)
+    logging.info("Program started.")
     with open("credentials.txt") as f:
         username = f.readline().strip()
         pin = f.readline().strip()
@@ -199,29 +243,4 @@ def main():
 
 
 if __name__ == "__main__":
-    # main()
-    with open("credentials.txt") as f:
-        username = f.readline().strip()
-        pin = f.readline().strip()
-        f.close()
-
-    print("Program started.")
-    cj = http.cookiejar.CookieJar()
-    br = mechanize.Browser()
-    br.set_handle_robots(False)
-    br.set_cookiejar(cj)
-    br.open(LOGIN_URL)
-    print("Login page loaded.")
-    br.select_form(nr=0)
-    br.form["code"] = username
-    br.form["pin"] = pin
-    br.submit()
-    print("Login successful.")
-
-    br.follow_link(text_regex=".*currently checked out")
-
-    print(br.response().read())
-    print("Successfully retrieved checked out items.")
-
-    with open("items.html", "wb") as w:
-        w.write(br.response().read())
+    main()
